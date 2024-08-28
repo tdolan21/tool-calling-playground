@@ -2,3 +2,4 @@ ollama
 playwright
 asyncio
 streamlit
+playwright-stealth
