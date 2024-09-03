@@ -1,16 +1,20 @@
+from tool_manager import ToolManager
+from ollama_client import OllamaClient
+from utils import get_ollama_options
+from PIL import Image
+
 import streamlit as st
 import asyncio
 import json
 import ollama 
-from tool_manager import ToolManager
-from ollama_client import OllamaClient
-from utils import get_ollama_options
+import io
 
 from tools.web_scraper import WebScraper
 from tools.calculator import CalculatorTool
+from tools.flux import FluxTool
 
 DEFAULT_SYSTEM_MESSAGE = """You are an AI assistant specialized in processing queries and using tools when necessary. 
-Always follow the specific instructions provided for each tool when you use them."""
+Always follow the specific instructions provided for each tool when you use them. If tools are referenced, give a simple response that mirrors the users request."""
 
 async def process_query(query: str, model: str, tool_manager: ToolManager, options: dict, system_message: str, tool_instructions: dict, chat_history: list):
     ollama_client = OllamaClient(model)
@@ -37,39 +41,53 @@ async def process_query(query: str, model: str, tool_manager: ToolManager, optio
             st.sidebar.write(f"Using tool: {tool_name}")
             st.sidebar.write(f"Tool arguments: {tool_args}")
             
-            tool_result = await tool_manager.execute_tool(tool_name, **tool_args)
+            with st.spinner(text="Generating with Flux..."):
+                tool_result = await tool_manager.execute_tool(tool_name, **tool_args)
             
-            instructions = tool_instructions.get(tool_name, "Process the tool results and provide a response.")
-
-            formatted_data = json.dumps(tool_result.get('extracted_data', tool_result), indent=2)
-            
-            working_history.append({
-                'role': 'function',
-                'name': tool_name,
-                'content': formatted_data,
-            })
-            
-            additional_instruction = {
-                'role': 'user',
-                'content': f"""Here is the data from the {tool_name}:
+            # Check if the tool result contains an image
+            if isinstance(tool_result['response'], Image.Image):
+                image = tool_result['response']
+                with st.expander(f"Generated Image for '{tool_args['prompt']}'", expanded=True):
+                    st.image(image, caption=f"Generated Image for '{tool_args['prompt']}'")
+                
+                # Update the chat history with a concise message
+                working_history.append({
+                    'role': 'assistant',
+                    'content': f"An image was generated for the prompt: '{tool_args['prompt']}'. Please check the image displayed."
+                })
+            else:
+                # Handle non-image results
+                formatted_data = json.dumps(tool_result.get('extracted_data', tool_result), indent=2)
+                
+                working_history.append({
+                    'role': 'function',
+                    'name': tool_name,
+                    'content': formatted_data,
+                })
+                
+                tool_instructions_content = tool_instructions.get(tool_name)
+                tool_instance = tool_manager.get_tool(tool_name)
+                
+                if tool_instructions_content and hasattr(tool_instance, 'instructions'):
+                    additional_instruction = {
+                        'role': 'user',
+                        'content': f"""Here is the data from the {tool_name}:
 
 {formatted_data}
 
 Instructions for processing this data:
-{instructions}
-
-"""            }
-            
-            working_history.append(additional_instruction)
+{tool_instructions_content}"""
+                    }
+                    
+                    working_history.append(additional_instruction)
         
         final_response = await ollama_client.chat(working_history, options=options)
         return final_response['message']['content']
     
     return response['message']['content']
 
-
 async def main():
-    st.set_page_config(page_title="Ollama Multi-Tool Demo", layout="wide", page_icon="https://ollama.com/public/icon-64x64.png")
+    st.set_page_config(page_title="Ollama GPT-4o", layout="wide", page_icon="https://ollama.com/public/icon-64x64.png")
     
     st.sidebar.title("Ollama Multi-Tool Demo")
     
@@ -89,6 +107,7 @@ async def main():
         # Initialize tools here
         st.session_state.tool_manager.register_tool("web_scraper", WebScraper())
         st.session_state.tool_manager.register_tool("calculator", CalculatorTool())
+        st.session_state.tool_manager.register_tool("flux", FluxTool())
 
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
@@ -120,17 +139,18 @@ async def main():
     for tool_name in st.session_state.tool_manager.get_tool_names():
         if st.session_state.tool_switches.get(tool_name, False):
             tool = st.session_state.tool_manager.get_tool(tool_name)
-            if tool and hasattr(tool, 'instructions'):
-                default_instructions = tool.instructions
-            else:
-                default_instructions = "Process the tool results and provide a response."
-            
-            st.session_state.tool_instructions[tool_name] = st.sidebar.text_area(
-                f"{tool_name.replace('_', ' ').title()} Instructions",
-                st.session_state.tool_instructions.get(tool_name, default_instructions),
-                key=f"instructions_{tool_name}",
-                height=150
-            )
+            if hasattr(tool, 'instructions') and tool.instructions:
+                st.session_state.tool_instructions[tool_name] = st.sidebar.text_area(
+                    f"{tool_name.replace('_', ' ').title()} Instructions",
+                    st.session_state.tool_instructions.get(tool_name, tool.instructions),
+                    key=f"instructions_{tool_name}",
+                    height=150
+                )
+
+    # Display chat history
+    for chat in st.session_state.chat_history:
+        with st.chat_message(chat["role"]):
+            st.markdown(chat["content"])
 
     if prompt := st.chat_input("Ask a question or request a task"):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
