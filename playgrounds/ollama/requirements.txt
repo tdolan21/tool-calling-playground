@@ -1,5 +1,8 @@
 ollama
 playwright
+playwright-stealth
 asyncio
 streamlit
-playwright-stealth
+litserve
+optimum
+optimum-quanto

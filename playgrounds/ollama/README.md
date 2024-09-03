@@ -1,15 +1,29 @@
 # Ollama Playground with tool calling
 
+Open source playground similar to OpenGPT-4o project. This repo serves as a comprehensive tool calling example.
+
+Before installing, this project will take ~16GB of VRAM to run everything. The litserve server is quite efficient. The ollama models and litserve models do not reserve the GPU space so the requests can be made in quick succession with low overhead compute cost. 
+
+Llama3.1: 7.4GB peak VRAM Usage
+
+
 ```bash
 git clone https://github.com/tdolan21/tool-calling-playground
 cd playgrounds/ollama
 ```
-For Linux:
+For Linux (No Flux Server):
+
 ```bash
-chmod +x ollama_install.sh
-./ollama_install.sh
+chmod +x install_linux.sh
+./install_linux.sh
 streamlit run playground.py
 ```
+If you want to launch the application with access to flux, then you can use this command:
+```bash
+chmod +x run.sh
+./run.sh
+```
+
 For Windows:
 
 Make sure you have ollama ≤ v0.3.6
@@ -69,6 +83,6 @@ in `playground.py` like this:
         st.session_state.tool_manager.register_tool("calculator", Calculator())
 ```
 
-This allows essentially any function to be used by a language model. Once a fucntion is registered the instructions will be editable in UI if you initiate the function. 
+This allows essentially any function to be used by a language model. Once a function is registered the instructions will be editable in UI if you initiate the function. 
 
 Functions are all designed to be dedicated so if you initiate the function it will try to use it. I have had much less success with the model choosing to use the functions reliably and staying in a standard chat simply on its own knowledge.
